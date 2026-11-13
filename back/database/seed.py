@@ -125,4 +125,15 @@ def seed_database():
         host_user_id=1,
     ))
 
+    db.session.add(Room(
+        id=11,
+        title="Annonce corrompue",
+        city="Lyon, France",
+        price=140,
+        picture="room-10.jpg",
+        category="loft",
+        description="<p>Loft spacieux avec coin travail, fibre haut débit.</p><script>alert(1)</script>",
+        host_user_id=1,
+    ))
+
     db.session.commit()
