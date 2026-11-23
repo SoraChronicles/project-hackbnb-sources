@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
+from werkzeug.serving import WSGIRequestHandler
 from database.init import db
 from database.seed import seed_database
 
@@ -16,6 +17,14 @@ from api.uploads.uploads_api import uploads_api
 app = Flask(__name__)
 app.config.from_pyfile('config.py')
 
+
+class NoServerHeaderRequestHandler(WSGIRequestHandler):
+   def send_header(self, keyword, value):
+      if keyword.lower() == 'server':
+         return
+      super().send_header(keyword, value)
+
+
 # Add CORS to all requests
 CORS(app, origins=app.config["CORS_ORIGINS"])
 
@@ -25,14 +34,14 @@ def add_security_headers(response):
    response.headers['X-Content-Security-Policy'] = 'default-src \'self\''
    response.headers['X-Frame-Options'] = 'DENY'
    response.headers['X-Content-Type-Options'] = 'nosniff'
-   return response
+   
 
 # ----------------------------------------------------------
 # --- CORRECTIF D8 : Suppression de la divulgation de la stack technique ---
    response.headers.pop('Server', None)
    response.headers.pop('X-Powered-By', None)
 # ----------------------------------------------------------
-
+   return response
 
 
 # Initialize database
@@ -59,4 +68,5 @@ if __name__ == '__main__':
       debug=True,
       host="0.0.0.0",
       port=9001,
+      request_handler=NoServerHeaderRequestHandler,
    )
