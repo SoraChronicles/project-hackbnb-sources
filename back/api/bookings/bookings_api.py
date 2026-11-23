@@ -14,6 +14,7 @@ from sqlalchemy.orm import joinedload
 
 import re
 import os
+import requests  
 
 bookings_api = Blueprint('bookings', __name__)
 
@@ -159,36 +160,37 @@ def confirm_booking_checkout(reference: str):
     if not booking:
         return {'error': 'Booking not found'}, 404
     data = request.get_json() or {}
+    print(f"Data received: {data}")
     client_secret = data.get("confirmationSecret")
-
+    print(f"Client secret received: {client_secret}")
     if not client_secret or booking.checkout_confirmation_secret != client_secret:
-        return {'error': 'Invalid confirmation secret'}, 422
+        return {'error': f'Invalid confirmation secret {data}'}, 422
 
-    # --- CORRECTION D4 : Vérification réelle auprès de Stripe ---
+    # Vérification du paiement auprès de Stripe
+    try:
+        stripe_session_id = booking.stripe_checkout_session_id
 
-    try : 
+        stripe_url = (
+            f"https://api.stripe.com/v1/checkout/sessions/"
+            f"{stripe_session_id}"
+        )
 
-        # on supposes que l'objet booking stocke l'ID de session de paiement Stripe (ex : stripe_checkout_session_id)
-        strip_session_id = booking.stripe_checkout_session_id
+        stripe_response = requests.get(
+            stripe_url,
+            auth=(os.environ["STRIPE_API_KEY"], ""),
+            timeout=10
+        )
 
-        # Appel à l'API officielle de Stripe pour vérifier le statut du paiement
-        stri_url = f"https://api.stripe.com/v1/checkout/sessions/{strip_session_id}"
-        headers = {
-            "Authorization": f"Bearer {os.environ.get('STRIPE_SECRET_KEY')}"
-        }
+        if stripe_response.status_code != 200:
+            return {"error": "Failed to verify payment with Stripe"}, 502
 
-        reponse = request.get(stri_url, headers=headers)
-        if reponse.status_code != 200:
-            return {'error': 'Failed to verify payment with Stripe'}, 500
+        stripe_data = stripe_response.json()
 
-        stripe_data = reponse.json()
-
-        # On s'assure que Stripe confirme que c'est bien payé ('paid')
         if stripe_data.get("payment_status") != "paid":
-            return {'error': 'Payment not completed'}, 422
-    except Exception as e:
-        return {'error': f'Error verifying payment with Stripe: {str(e)}'}, 500
-# -------------------------------------------------------------------------------------------------
+            return {"error": "Payment not completed"}, 422
+
+    except (requests.RequestException, ValueError, KeyError):
+        return {"error": "Payment verification unavailable"}, 502
 
 # si le paiment est validé par Stripe, on valide la réservation
     booking.is_paid = True
