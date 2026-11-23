@@ -29,11 +29,16 @@ def get_room_details(room_id: str):
    """
 
    room = Room.query.options(joinedload(Room.host_user)).filter_by(id=room_id).first()
-   if not room:
-      return {'error': 'Room not found'}, 404
+   # if not room:
+   #    return {'error': 'Room not found'}, 404
 
-   return jsonify(room.to_dict())
-
+   # Sérialisation manuelle ou nettoyage pour masquer l'email de l'hôte
+   room_data = room.to_dict()
+   if 'host' in room_data and room_data['host']:
+      # Suppression du cham sensible 'email'
+      room_data['host'].pop('email', None)
+      
+   return jsonify(room_data)
 
 @rooms_api.route('/<room_id>/picture')
 def send_report(room_id: str):

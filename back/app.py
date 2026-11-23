@@ -19,6 +19,22 @@ app.config.from_pyfile('config.py')
 # Add CORS to all requests
 CORS(app, origins=app.config["CORS_ORIGINS"])
 
+# --- CORRECTIF D7 : Ajout des en-têtes de sécurité HTTP ---
+@app.after_request
+def add_security_headers(response):
+   response.headers['X-Content-Security-Policy'] = 'default-src \'self\''
+   response.headers['X-Frame-Options'] = 'DENY'
+   response.headers['X-Content-Type-Options'] = 'nosniff'
+   return response
+
+# ----------------------------------------------------------
+# --- CORRECTIF D8 : Suppression de la divulgation de la stack technique ---
+   response.headers.pop('Server', None)
+   response.headers.pop('X-Powered-By', None)
+# ----------------------------------------------------------
+
+
+
 # Initialize database
 db.init_app(app)
 with app.app_context():

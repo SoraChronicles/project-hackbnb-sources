@@ -11,6 +11,10 @@ from services.stripe import create_checkout, get_checkout_lines
 from .bookings_models import Booking
 from sqlalchemy.orm import joinedload
 
+
+import re
+import os
+
 bookings_api = Blueprint('bookings', __name__)
 
 
@@ -42,6 +46,12 @@ def get_booking_checkout_lines(reference: str):
 
     try:
         checkout_session_id = request.args.get("checkout_session_id")
+        # --- CORRECTION D3 : Validation stricte du format de l'ID Strip ---
+        # On  n'autorise que les caractère alphanumérique et underscores (bloquant tout ../ou URL externe)
+        if not checkout_session_id or not re.match(r'^cs_[a-zA-Z0-9_]+$', checkout_session_id):
+            return {'error': 'Invalid checkout session ID format'}, 400
+        # -----------------------------------------------------------------
+
         return jsonify(get_checkout_lines(checkout_session_id))
     except:
         return {'error': 'Invalid checkout session ID'}, 404
@@ -131,13 +141,56 @@ def confirm_booking_checkout(reference: str):
     Confirm checkout payment for a booking
     """
 
+    # booking = Booking.query.filter_by(reference=reference).first()
+    # if not booking:
+    #     return {'error': 'Booking not found'}, 404
+    
+    # if booking.checkout_confirmation_secret != request.json["confirmationSecret"]:
+    #     return {'error': 'Invalid confirmation secret'}, 422
+
+    # booking.is_paid = True
+    # db.session.commit()
+
+    # return jsonify({
+    #     "success": True,
+    # })
+
     booking = Booking.query.filter_by(reference=reference).first()
     if not booking:
         return {'error': 'Booking not found'}, 404
-    
-    if booking.checkout_confirmation_secret != request.json["confirmationSecret"]:
+    data = request.get_json() or {}
+    client_secret = data.get("confirmationSecret")
+
+    if not client_secret or booking.checkout_confirmation_secret != client_secret:
         return {'error': 'Invalid confirmation secret'}, 422
 
+    # --- CORRECTION D4 : Vérification réelle auprès de Stripe ---
+
+    try : 
+
+        # on supposes que l'objet booking stocke l'ID de session de paiement Stripe (ex : stripe_checkout_session_id)
+        strip_session_id = booking.stripe_checkout_session_id
+
+        # Appel à l'API officielle de Stripe pour vérifier le statut du paiement
+        stri_url = f"https://api.stripe.com/v1/checkout/sessions/{strip_session_id}"
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('STRIPE_SECRET_KEY')}"
+        }
+
+        reponse = request.get(stri_url, headers=headers)
+        if reponse.status_code != 200:
+            return {'error': 'Failed to verify payment with Stripe'}, 500
+
+        stripe_data = reponse.json()
+
+        # On s'assure que Stripe confirme que c'est bien payé ('paid')
+        if stripe_data.get("payment_status") != "paid":
+            return {'error': 'Payment not completed'}, 422
+    except Exception as e:
+        return {'error': f'Error verifying payment with Stripe: {str(e)}'}, 500
+# -------------------------------------------------------------------------------------------------
+
+# si le paiment est validé par Stripe, on valide la réservation
     booking.is_paid = True
     db.session.commit()
 
